@@ -30,39 +30,51 @@ func te2() error {
 }
 
 func TestMerge(t *testing.T) {
-	gm := gmerge.New()
-	gm.Add(t1)
-	gm.Add(t2)
-
-	gm.AddFs(te1, te2)
-
-	errs := gm.Run()
-
-	fnd := 0
-	for _, err := range errs {
-		if err.Error() == "error1" || err.Error() == "error2" {
-			fnd++
-			continue
-		}
-
-		t.Errorf("expected errors error1 or error2 but got %s", err.Error())
+	tt := []struct {
+		name string
+		f    gmerge.GFunc
+		tag  string
+		err  error
+	}{
+		{"success test 1", t1, "test 1", nil},
+		{"success test 2", t2, "test 2", nil},
+		{"fail test 3", te1, "test 3", errors.New("error1")},
+		{"fail test 4", te2, "test 4", errors.New("error2")},
 	}
+
+	gm := gmerge.New()
+	for _, t := range tt {
+		gm.Add(t.tag, t.f)
+	}
+
+	merr := gm.Run()
+
+	for _, s := range tt {
+		t.Run(s.name, func(t *testing.T) {
+			exp := fmt.Sprintf("%v", s.err)
+			recv := fmt.Sprintf("%v", merr[s.tag])
+			if exp != recv {
+				t.Errorf("expected err is %s but got %s", exp, recv)
+			}
+		})
+	}
+
 }
 
 func ExampleMerger() {
 	gm := gmerge.New()
 
-	gm.Add(func() error {
+	gm.Add("test1", func() error {
 		time.Sleep(time.Second * 1)
 		return nil
 	})
 
-	gm.Add(func() error {
+	gm.Add("test2", func() error {
 		time.Sleep(time.Second * 2)
 		return errors.New("error1")
 	})
 
-	errs := gm.Run()
-	fmt.Println(errs)
-	// Output: [error1]
+	merr := gm.Run()
+	fmt.Println(merr["test2"])
+	// Output: error1
 }

@@ -5,33 +5,43 @@ import (
 	"sync"
 )
 
+type fholder struct {
+	gfunc GFunc
+	tag   string
+}
+
+type eholder struct {
+	err error
+	tag string
+}
+
 type merge struct {
-	gfuncs []GFunc
-	ech    chan error
-	wg     sync.WaitGroup
+	fholders []fholder
+	errch    chan eholder
+	wg       sync.WaitGroup
 }
 
-func (m *merge) Add(gf GFunc) {
-	m.gfuncs = append(m.gfuncs, gf)
-}
-
-func (m *merge) AddFs(gfs ...GFunc) {
-	for _, gf := range gfs {
-		m.Add(gf)
-	}
+func (m *merge) Add(tag string, gf GFunc) {
+	m.fholders = append(m.fholders, fholder{
+		gfunc: gf,
+		tag:   tag,
+	})
 }
 
 func (m *merge) runI(i int) {
 	defer m.wg.Done()
 
-	if err := m.gfuncs[i](); err != nil {
-		m.ech <- err
+	if err := m.fholders[i].gfunc(); err != nil {
+		m.errch <- eholder{
+			tag: m.fholders[i].tag,
+			err: err,
+		}
 	}
 }
 
-func (m *merge) Run() []error {
+func (m *merge) Run() map[string]error {
 
-	for i := range m.gfuncs {
+	for i := range m.fholders {
 		m.wg.Add(1)
 		go m.runI(i)
 	}
@@ -39,38 +49,38 @@ func (m *merge) Run() []error {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {
-		defer close(m.ech)
+		defer close(m.errch)
 
 		m.wg.Wait()
 		cancel()
 	}()
 
-	errs := []error{}
+	merr := make(map[string]error)
 	done := false
 
 	for !done {
 		select {
-		case err, ok := <-m.ech:
+		case errh, ok := <-m.errch:
 			if !ok {
-				m.ech = nil
+				m.errch = nil
 				continue
 			}
 
-			errs = append(errs, err)
+			merr[errh.tag] = errh.err
 
 		case <-ctx.Done():
 			done = true
 		}
 	}
 
-	return errs
+	return merr
 }
 
 // New returns instance of Merger
 func New() Merger {
 	return &merge{
-		gfuncs: []GFunc{},
-		ech:    make(chan error),
-		wg:     sync.WaitGroup{},
+		fholders: []fholder{},
+		errch:    make(chan eholder),
+		wg:       sync.WaitGroup{},
 	}
 }

@@ -5,7 +5,6 @@ type GFunc func() error
 
 // Merger wraps metods to handle goroutine merge
 type Merger interface {
-	Add(GFunc)
-	AddFs(...GFunc)
-	Run() []error
+	Add(string, GFunc)
+	Run() map[string]error
 }
